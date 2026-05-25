@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+*.pdf
+*.xlsx
+*.xls
+data/*.sqlite
+data/*.log
+data/*server*.log
+data/extraccion-catalogo/
+data/page*_inspect.json
