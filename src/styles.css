@@ -178,6 +178,7 @@ h1 {
 }
 
 .secondary-button {
+  gap: 8px;
   font-weight: 700;
 }
 
@@ -720,6 +721,10 @@ h1 {
   max-width: 460px;
   padding: 18px;
   width: min(100%, 460px);
+}
+
+.edit-modal .danger-button {
+  width: 100%;
 }
 
 .edit-modal-heading {

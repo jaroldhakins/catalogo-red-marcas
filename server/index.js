@@ -269,6 +269,45 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/products") {
+    const body = await readBody(req);
+    const product = normalizeProduct(body);
+
+    if (!product.code || !product.name) {
+      json(res, 400, { message: "El codigo y el nombre son obligatorios." });
+      return;
+    }
+
+    if (!Number.isInteger(product.price) || product.price < 0) {
+      json(res, 400, { message: "El precio debe ser un numero entero mayor o igual a cero." });
+      return;
+    }
+
+    const duplicate = db.prepare("SELECT code FROM products WHERE code = ?").get(product.code);
+    if (duplicate) {
+      json(res, 409, { message: `Ya existe un producto con el codigo ${product.code}.` });
+      return;
+    }
+
+    db.prepare(`
+      INSERT INTO products (code, name, brand, category, image, price, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, 999999)
+    `).run(
+      product.code,
+      product.name,
+      product.brand || product.category || "Novedades",
+      product.category || product.brand || "Novedades",
+      product.image || "/productos/placeholder.svg",
+      product.price
+    );
+
+    const created = db
+      .prepare("SELECT code, name, brand, category, image, price FROM products WHERE code = ?")
+      .get(product.code);
+    json(res, 201, created);
+    return;
+  }
+
   if (req.method === "PATCH" && url.pathname.startsWith("/api/products/")) {
     const currentCode = decodeURIComponent(url.pathname.replace("/api/products/", "")).trim();
     const body = await readBody(req);
@@ -302,6 +341,26 @@ async function handleApi(req, res, url) {
       .prepare("SELECT code, name, brand, category, image, price FROM products WHERE code = ?")
       .get(nextCode);
     json(res, 200, updated);
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/products/")) {
+    const code = decodeURIComponent(url.pathname.replace("/api/products/", "")).trim();
+    const body = await readBody(req);
+    const pin = String(body.pin ?? "").trim();
+
+    if (!/^\d{4}$/.test(pin) || pin !== deletePin) {
+      json(res, 403, { message: "Clave de eliminacion incorrecta." });
+      return;
+    }
+
+    const deletedProducts = db.prepare("DELETE FROM products WHERE code = ?").run(code).changes;
+    if (deletedProducts === 0) {
+      json(res, 404, { message: "Producto no encontrado." });
+      return;
+    }
+
+    json(res, 200, { deletedProducts });
     return;
   }
 

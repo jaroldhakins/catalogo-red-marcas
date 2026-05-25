@@ -16,6 +16,8 @@ import {
   X
 } from "lucide-react";
 import {
+  createProduct,
+  deleteProduct,
   deleteOrdersForDate as deleteOrdersForDateFromStore,
   getDailySummary,
   getProducts,
@@ -34,6 +36,8 @@ type BrandSummary = {
   name: string;
   count: number;
 };
+
+type PromoCategory = "Promos" | "Novedades";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -141,6 +145,11 @@ function App() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editCode, setEditCode] = useState("");
   const [editPrice, setEditPrice] = useState("");
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+  const [newProductCategory, setNewProductCategory] = useState<PromoCategory>("Promos");
+  const [newProductCode, setNewProductCode] = useState("");
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductPrice, setNewProductPrice] = useState("");
 
   async function loadProducts() {
     try {
@@ -258,6 +267,71 @@ function App() {
     setStatus("Producto actualizado correctamente.");
   }
 
+  async function removeEditingProduct() {
+    if (!editingProduct) return;
+    const confirmed = window.confirm(`Eliminar ${editingProduct.name} del catalogo?`);
+    if (!confirmed) return;
+    const pin = window.prompt("Ingresa la clave de 4 digitos para eliminar el producto.");
+    if (pin === null) return;
+
+    try {
+      await deleteProduct(editingProduct.code, pin);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "No se pudo eliminar el producto.");
+      return;
+    }
+
+    setProducts((current) => current.filter((product) => product.code !== editingProduct.code));
+    setCart((current) => {
+      const next = { ...current };
+      delete next[editingProduct.code];
+      return next;
+    });
+    setEditingProduct(null);
+    setStatus("Producto eliminado del catalogo.");
+  }
+
+  async function saveNewProduct(event: React.FormEvent) {
+    event.preventDefault();
+    const code = newProductCode.trim();
+    const name = newProductName.trim();
+    const price = Number(newProductPrice);
+
+    if (!code || !name) {
+      setStatus("El codigo y el nombre son obligatorios.");
+      return;
+    }
+
+    if (!Number.isInteger(price) || price < 0) {
+      setStatus("El precio debe ser un numero entero mayor o igual a cero.");
+      return;
+    }
+
+    let created: Product;
+    try {
+      created = await createProduct({
+        code,
+        name,
+        brand: newProductCategory,
+        category: newProductCategory,
+        image: "/productos/placeholder.svg",
+        price
+      });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "No se pudo crear el producto.");
+      return;
+    }
+
+    setProducts((current) => [...current.filter((product) => product.code !== created.code), created]);
+    setBrand(newProductCategory);
+    setCategory(newProductCategory);
+    setIsCreatingProduct(false);
+    setNewProductCode("");
+    setNewProductName("");
+    setNewProductPrice("");
+    setStatus(`${newProductCategory.slice(0, -1)} agregada correctamente.`);
+  }
+
   async function saveOrder() {
     setStatus("");
     try {
@@ -354,6 +428,10 @@ function App() {
           <h1>{customer}</h1>
         </div>
         <div className="topbar-actions">
+          <button className="secondary-button" onClick={() => setIsCreatingProduct(true)}>
+            <Plus size={18} />
+            Agregar producto
+          </button>
           <label className="icon-button" title="Importar catalogo CSV">
             <FileUp size={19} />
             <input
@@ -600,6 +678,61 @@ function App() {
             <button type="submit">
               <Save size={18} />
               Guardar cambios
+            </button>
+            <button type="button" className="danger-button" onClick={removeEditingProduct}>
+              <Trash2 size={18} />
+              Eliminar producto
+            </button>
+          </form>
+        </div>
+      )}
+
+      {isCreatingProduct && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <form className="edit-modal" onSubmit={saveNewProduct}>
+            <div className="edit-modal-heading">
+              <div>
+                <span className="eyebrow">Promos y novedades</span>
+                <h2>Agregar producto</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setIsCreatingProduct(false)} title="Cerrar">
+                <X size={18} />
+              </button>
+            </div>
+            <label htmlFor="new-product-category">Categoria</label>
+            <select
+              id="new-product-category"
+              value={newProductCategory}
+              onChange={(event) => setNewProductCategory(event.target.value as PromoCategory)}
+            >
+              <option>Promos</option>
+              <option>Novedades</option>
+            </select>
+            <label htmlFor="new-product-code">Codigo</label>
+            <input
+              id="new-product-code"
+              value={newProductCode}
+              onChange={(event) => setNewProductCode(event.target.value)}
+              autoFocus
+            />
+            <label htmlFor="new-product-name">Nombre</label>
+            <input
+              id="new-product-name"
+              value={newProductName}
+              onChange={(event) => setNewProductName(event.target.value)}
+            />
+            <label htmlFor="new-product-price">Precio</label>
+            <input
+              id="new-product-price"
+              type="number"
+              min={0}
+              step={1}
+              value={newProductPrice}
+              onChange={(event) => setNewProductPrice(event.target.value)}
+            />
+            <button type="submit">
+              <Save size={18} />
+              Guardar producto
             </button>
           </form>
         </div>

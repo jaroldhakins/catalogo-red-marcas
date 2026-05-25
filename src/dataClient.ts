@@ -40,6 +40,7 @@ export type DailySummary = {
 
 const fallbackSupabaseUrl = "https://swnmnwggvbvqthdnfjka.supabase.co";
 const fallbackSupabaseKey = "sb_publishable_hwsIHmt3qAxeduoDQ-x5yA_UNQI2xjg";
+const deletedCategory = "Eliminados";
 
 function cleanEnvValue(value: string | undefined, fallback: string) {
   const cleaned = String(value || "")
@@ -96,7 +97,7 @@ export async function getProducts(): Promise<Product[]> {
     .order("name", { ascending: true });
 
   if (error) throw error;
-  return (data || []).map(mapProduct);
+  return (data || []).map(mapProduct).filter((product) => product.category !== deletedCategory);
 }
 
 export async function updateProduct(currentCode: string, product: Pick<Product, "code" | "price">): Promise<Product> {
@@ -120,6 +121,68 @@ export async function updateProduct(currentCode: string, product: Pick<Product, 
 
   if (error) throw error;
   return mapProduct(data);
+}
+
+export async function createProduct(product: Product): Promise<Product> {
+  if (!supabase) {
+    const response = await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(product)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "No se pudo crear el producto.");
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("products")
+    .insert({
+      code: product.code,
+      name: product.name,
+      brand: product.brand,
+      category: product.category,
+      image: product.image || "/productos/placeholder.svg",
+      price: product.price,
+      sort_order: 999999
+    })
+    .select("code,name,brand,category,image,price")
+    .single();
+
+  if (error) throw error;
+  return mapProduct(data);
+}
+
+export async function deleteProduct(code: string, pin: string) {
+  if (pin !== "0000") throw new Error("Clave de eliminacion incorrecta.");
+
+  if (!supabase) {
+    const response = await fetch(`/api/products/${encodeURIComponent(code)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "No se pudo eliminar el producto.");
+    return result as { deletedProducts: number };
+  }
+
+  const deletedCode = `ELIMINADO-${Date.now()}-${code}`;
+  const { error, count } = await supabase
+    .from("products")
+    .update({
+      code: deletedCode,
+      name: `Producto eliminado ${code}`,
+      brand: deletedCategory,
+      category: deletedCategory,
+      image: "/productos/placeholder.svg",
+      price: 0,
+      sort_order: 999999
+    }, { count: "exact" })
+    .eq("code", code);
+
+  if (error) throw error;
+  return { deletedProducts: count || 0 };
 }
 
 export async function importProducts(products: Product[]) {
