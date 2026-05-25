@@ -20,6 +20,7 @@ import {
   getDailySummary,
   getProducts,
   importProducts,
+  isSupabaseMode,
   saveOrder as saveOrderToStore,
   updateProduct,
   type DailySummary,
@@ -142,11 +143,23 @@ function App() {
   const [editPrice, setEditPrice] = useState("");
 
   async function loadProducts() {
-    setProducts(await getProducts());
+    try {
+      const loadedProducts = await getProducts();
+      setProducts(loadedProducts);
+      if (loadedProducts.length === 0) {
+        setStatus("No se encontraron productos en Supabase.");
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? `No se pudo cargar el catalogo: ${error.message}` : "No se pudo cargar el catalogo.");
+    }
   }
 
   async function loadDailySummary(date = reportDate) {
-    setDailySummary(await getDailySummary(date));
+    try {
+      setDailySummary(await getDailySummary(date));
+    } catch (error) {
+      setStatus(error instanceof Error ? `No se pudo cargar el informe: ${error.message}` : "No se pudo cargar el informe.");
+    }
   }
 
   useEffect(() => {
@@ -337,7 +350,7 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <span className="eyebrow">Pedido local</span>
+          <span className="eyebrow">{isSupabaseMode() ? "Pedido en nube" : "Pedido local"}</span>
           <h1>{customer}</h1>
         </div>
         <div className="topbar-actions">

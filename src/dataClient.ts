@@ -40,8 +40,18 @@ export type DailySummary = {
 
 const fallbackSupabaseUrl = "https://swnmnwggvbvqthdnfjka.supabase.co";
 const fallbackSupabaseKey = "sb_publishable_hwsIHmt3qAxeduoDQ-x5yA_UNQI2xjg";
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || fallbackSupabaseUrl;
-const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || fallbackSupabaseKey;
+
+function cleanEnvValue(value: string | undefined, fallback: string) {
+  const cleaned = String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^value:\s*/i, "").trim())
+    .filter(Boolean)
+    .at(-1);
+  return cleaned || fallback;
+}
+
+const supabaseUrl = cleanEnvValue(import.meta.env.VITE_SUPABASE_URL as string | undefined, fallbackSupabaseUrl);
+const supabaseKey = cleanEnvValue(import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined, fallbackSupabaseKey);
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 function nextDate(date: string) {
