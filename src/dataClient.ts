@@ -38,8 +38,10 @@ export type DailySummary = {
   stores: StoreReport[];
 };
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const fallbackSupabaseUrl = "https://swnmnwggvbvqthdnfjka.supabase.co";
+const fallbackSupabaseKey = "sb_publishable_hwsIHmt3qAxeduoDQ-x5yA_UNQI2xjg";
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || fallbackSupabaseUrl;
+const supabaseKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || fallbackSupabaseKey;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 function nextDate(date: string) {
