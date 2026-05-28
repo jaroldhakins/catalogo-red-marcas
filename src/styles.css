@@ -879,24 +879,49 @@ h1 {
   }
 
   .product-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .product-card {
-    grid-template-rows: 128px 1fr auto;
-    min-height: 286px;
+    grid-template-rows: 92px 1fr auto;
+    min-height: 238px;
   }
 
   .image-button img {
-    height: 128px;
+    height: 92px;
+    padding: 7px;
   }
 
   .product-info {
-    padding: 10px;
+    gap: 4px;
+    padding: 8px;
   }
 
   .product-info h2 {
-    font-size: 0.9rem;
+    font-size: 0.76rem;
+    line-height: 1.15;
+  }
+
+  .product-info span {
+    font-size: 0.62rem;
+  }
+
+  .product-info p,
+  .price-label {
+    font-size: 0.7rem;
+  }
+
+  .edit-product-button {
+    height: 30px;
+    right: 6px;
+    top: 6px;
+    width: 30px;
+  }
+
+  .quantity-control {
+    grid-template-columns: 34px 1fr 34px;
+    height: 40px;
   }
 }
 
@@ -915,6 +940,6 @@ h1 {
   }
 
   .product-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
