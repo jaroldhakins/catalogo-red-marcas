@@ -115,6 +115,22 @@ form button,
   padding: 0 18px;
 }
 
+.entry-secondary {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #d8ded4;
+  border-radius: 8px;
+  color: #175f37;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  height: 46px;
+  justify-content: center;
+  margin-top: 12px;
+  width: 100%;
+}
+
 .app-shell {
   margin: 0 auto;
   max-width: 1500px;
@@ -196,6 +212,17 @@ h1 {
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(0, 1fr) 390px;
+}
+
+.reports-shell {
+  max-width: 980px;
+}
+
+.reports-panel {
+  background: #fff;
+  border: 1px solid #dfe4db;
+  border-radius: 8px;
+  padding: 16px;
 }
 
 .catalog-area,
@@ -745,26 +772,61 @@ h1 {
   }
 
   .order-panel {
+    max-height: none;
     position: static;
   }
 }
 
 @media (max-width: 700px) {
   .app-shell {
-    padding: 12px;
+    padding: 10px;
   }
 
   .topbar {
     align-items: stretch;
+    background: #f6f7f2;
     flex-direction: column;
+    margin: -10px -10px 10px;
+    padding: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
 
   .topbar-actions {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: 1fr 42px 42px;
+    justify-content: stretch;
+  }
+
+  .topbar-actions .secondary-button {
+    width: 100%;
+  }
+
+  .topbar-actions .secondary-button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .order-panel {
+    order: -1;
+    padding: 12px;
+    width: 100%;
   }
 
   .toolbar {
+    background: #f6f7f2;
     grid-template-columns: 1fr;
+    margin-left: -10px;
+    margin-right: -10px;
+    padding: 8px 10px;
+    position: sticky;
+    top: 132px;
+    z-index: 8;
   }
 
   .brand-filter-heading {
@@ -777,7 +839,7 @@ h1 {
   }
 
   .brand-strip {
-    grid-auto-columns: minmax(132px, 42%);
+    grid-auto-columns: minmax(132px, 44%);
     grid-auto-flow: column;
     grid-template-columns: none;
     overflow-x: auto;
@@ -792,6 +854,14 @@ h1 {
   .report-toolbar,
   .report-actions {
     grid-template-columns: 1fr;
+  }
+
+  .reports-panel {
+    padding: 12px;
+  }
+
+  .cart-list {
+    max-height: 220px;
   }
 
   .store-report-item {
@@ -814,6 +884,14 @@ h1 {
 
   .image-button img {
     height: 128px;
+  }
+
+  .product-info {
+    padding: 10px;
+  }
+
+  .product-info h2 {
+    font-size: 0.9rem;
   }
 }
 

@@ -134,6 +134,7 @@ function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customerDraft, setCustomerDraft] = useState("");
   const [customer, setCustomer] = useState("");
+  const [reportsOnly, setReportsOnly] = useState(false);
   const [cart, setCart] = useState<Cart>({});
   const [query, setQuery] = useState("");
   const [brand, setBrand] = useState("Todas");
@@ -385,6 +386,99 @@ function App() {
     await loadProducts();
   }
 
+  function renderDailyReport() {
+    return (
+      <div className="daily-report detailed-report">
+        <div className="report-toolbar">
+          <div>
+            <h3>Informe por tienda</h3>
+            <span>{dailySummary?.storeCount || 0} tiendas - {formatCurrency(dailySummary?.grandTotal || 0)}</span>
+          </div>
+          <input
+            type="date"
+            value={reportDate}
+            onChange={async (event) => {
+              setReportDate(event.target.value);
+              await loadDailySummary(event.target.value);
+            }}
+          />
+        </div>
+
+        <div className="report-actions">
+          <button className="secondary-button" onClick={() => downloadDailyCsv(dailySummary)}>
+            Descargar CSV
+          </button>
+          <button className="danger-button" onClick={deleteOrdersForDate} disabled={!dailySummary?.stores.length}>
+            <Trash2 size={16} />
+            Eliminar fecha
+          </button>
+        </div>
+
+        {dailySummary && dailySummary.stores.length > 0 ? (
+          <div className="store-report-list">
+            {dailySummary.stores.map((store) => (
+              <section className="store-report" key={store.customer}>
+                <div className="store-report-heading">
+                  <div>
+                    <strong>{store.customer}</strong>
+                    <span>{store.orderCount} pedidos</span>
+                  </div>
+                  <b>{formatCurrency(store.total)}</b>
+                </div>
+                <div className="store-report-items">
+                  {store.items.map((item) => (
+                    <div className="store-report-item" key={`${store.customer}-${item.code}-${item.unitPrice}`}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>{item.code}</span>
+                      </div>
+                      <span>{item.quantity}</span>
+                      <span>{formatCurrency(item.unitPrice)}</span>
+                      <b>{formatCurrency(item.total)}</b>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <p>No hay pedidos para esta fecha.</p>
+        )}
+      </div>
+    );
+  }
+
+  if (reportsOnly) {
+    return (
+      <main className="app-shell reports-shell">
+        <header className="topbar">
+          <div>
+            <span className="eyebrow">{isSupabaseMode() ? "Pedido en nube" : "Pedido local"}</span>
+            <h1>Pedidos del dia</h1>
+          </div>
+          <div className="topbar-actions">
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setReportsOnly(false);
+                setCustomer("");
+              }}
+            >
+              <Store size={18} />
+              Nuevo pedido
+            </button>
+          </div>
+        </header>
+
+        {status && <p className="status">{status}</p>}
+
+        <section className="reports-panel">
+          {renderDailyReport()}
+        </section>
+      </main>
+    );
+  }
+
   if (!customer) {
     return (
       <main className="entry-screen">
@@ -399,7 +493,10 @@ function App() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (customerDraft.trim()) setCustomer(customerDraft.trim());
+              if (customerDraft.trim()) {
+                setReportsOnly(false);
+                setCustomer(customerDraft.trim());
+              }
             }}
           >
             <label htmlFor="customer">Nombre de tienda o cliente</label>
@@ -415,6 +512,17 @@ function App() {
               Iniciar pedido
             </button>
           </form>
+          <button
+            className="entry-secondary"
+            onClick={() => {
+              setReportsOnly(true);
+              setSideView("reports");
+              loadDailySummary(reportDate);
+            }}
+          >
+            <ClipboardList size={18} />
+            Ver pedidos del dia
+          </button>
         </section>
       </main>
     );
@@ -590,63 +698,7 @@ function App() {
           ) : (
             <>
 
-          <div className="daily-report detailed-report">
-            <div className="report-toolbar">
-              <div>
-                <h3>Informe por tienda</h3>
-                <span>{dailySummary?.storeCount || 0} tiendas - {formatCurrency(dailySummary?.grandTotal || 0)}</span>
-              </div>
-              <input
-                type="date"
-                value={reportDate}
-                onChange={async (event) => {
-                  setReportDate(event.target.value);
-                  await loadDailySummary(event.target.value);
-                }}
-              />
-            </div>
-
-            <div className="report-actions">
-              <button className="secondary-button" onClick={() => downloadDailyCsv(dailySummary)}>
-                Descargar CSV
-              </button>
-              <button className="danger-button" onClick={deleteOrdersForDate} disabled={!dailySummary?.stores.length}>
-                <Trash2 size={16} />
-                Eliminar fecha
-              </button>
-            </div>
-
-            {dailySummary && dailySummary.stores.length > 0 ? (
-              <div className="store-report-list">
-                {dailySummary.stores.map((store) => (
-                  <section className="store-report" key={store.customer}>
-                    <div className="store-report-heading">
-                      <div>
-                        <strong>{store.customer}</strong>
-                        <span>{store.orderCount} pedidos</span>
-                      </div>
-                      <b>{formatCurrency(store.total)}</b>
-                    </div>
-                    <div className="store-report-items">
-                      {store.items.map((item) => (
-                        <div className="store-report-item" key={`${store.customer}-${item.code}-${item.unitPrice}`}>
-                          <div>
-                            <strong>{item.name}</strong>
-                            <span>{item.code}</span>
-                          </div>
-                          <span>{item.quantity}</span>
-                          <span>{formatCurrency(item.unitPrice)}</span>
-                          <b>{formatCurrency(item.total)}</b>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            ) : (
-              <p>No hay pedidos para esta fecha.</p>
-            )}
-          </div>
+          {renderDailyReport()}
             </>
           )}
         </aside>
