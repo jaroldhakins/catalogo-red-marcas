@@ -839,16 +839,20 @@ h1 {
   }
 
   .brand-strip {
-    grid-auto-columns: minmax(132px, 44%);
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scroll-snap-type: x proximity;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .brand-tile {
-    scroll-snap-align: start;
+    min-height: 74px;
+    padding: 12px 14px;
+  }
+
+  .brand-tile strong {
+    font-size: 1rem;
+  }
+
+  .brand-tile span {
+    font-size: 0.84rem;
   }
 
   .report-toolbar,
@@ -898,6 +902,16 @@ h1 {
 @media (max-width: 460px) {
   .entry-panel {
     padding: 22px;
+  }
+
+  .brand-strip {
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .brand-tile {
+    min-height: 68px;
+    padding: 10px 12px;
   }
 
   .product-grid {
