@@ -617,7 +617,15 @@ function App() {
               return (
                 <article className={quantity > 0 ? "product-card selected" : "product-card"} key={product.code}>
                   <button className="image-button" onClick={() => setQuantity(product.code, quantity + 1)}>
-                    <img src={product.image || "/productos/placeholder.svg"} alt={product.name} />
+                    <img
+                      src={product.image || "/productos/placeholder.svg"}
+                      alt={product.name}
+                      loading="lazy"
+                      decoding="async"
+                      onError={(event) => {
+                        event.currentTarget.src = "/productos/placeholder.svg";
+                      }}
+                    />
                   </button>
                   <div className="product-info">
                     <span>{product.brand || "Sin marca"}</span>
