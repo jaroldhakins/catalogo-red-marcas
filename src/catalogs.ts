@@ -5,8 +5,7 @@ const aguaCodes = new Set([
 ]);
 
 export function catalogForProductCode(code: string, explicit?: unknown): CatalogId {
+  if (aguaCodes.has(code)) return "agua";
   if (String(explicit || "").toLowerCase() === "agua") return "agua";
-  if (String(explicit || "").toLowerCase() === "aire") return "aire";
-  return aguaCodes.has(code) ? "agua" : "aire";
+  return "aire";
 }
-
