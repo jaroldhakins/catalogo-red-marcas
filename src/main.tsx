@@ -25,6 +25,7 @@ import {
   isSupabaseMode,
   saveOrder as saveOrderToStore,
   updateProduct,
+  type CatalogId,
   type DailySummary,
   type Product
 } from "./dataClient";
@@ -38,8 +39,36 @@ type BrandSummary = {
 };
 
 type PromoCategory = "Promos" | "Novedades";
+type ReportCatalogFilter = "todos" | CatalogId;
 
 const today = new Date().toISOString().slice(0, 10);
+const draftStorageKey = "catalogo-red-marcas-pedido-borrador-v2";
+
+const catalogOptions: Array<{ id: CatalogId; label: string }> = [
+  { id: "agua", label: "Agua" },
+  { id: "aire", label: "Aire" }
+];
+
+function catalogLabel(catalog: ReportCatalogFilter) {
+  if (catalog === "todos") return "Todos";
+  return catalog === "agua" ? "Agua" : "Aire";
+}
+
+function readDraft() {
+  try {
+    const raw = window.localStorage.getItem(draftStorageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      customerDraft?: string;
+      customer?: string;
+      cart?: Cart;
+      activeCatalog?: CatalogId;
+    };
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 function parseCsv(text: string): Product[] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
@@ -78,16 +107,19 @@ function parseCsv(text: string): Product[] {
   const brandIndex = index("marca");
   const categoryIndex = index("categoria");
   const imageIndex = index("imagen");
+  const catalogIndex = index("catalogo") >= 0 ? index("catalogo") : index("catalog");
 
   return lines.slice(1).map((line) => {
     const values = parseLine(line);
+    const catalog = values[catalogIndex] === "agua" ? "agua" : "aire";
     return {
       code: values[codeIndex] || "",
       name: values[nameIndex] || "",
       brand: values[brandIndex] || "",
       category: values[categoryIndex] || "",
       image: values[imageIndex] || "/productos/placeholder.svg",
-      price: Number(values[headers.indexOf("precio")] || values[headers.indexOf("price")] || 0) || 0
+      price: Number(values[headers.indexOf("precio")] || values[headers.indexOf("price")] || 0) || 0,
+      catalog
     };
   });
 }
@@ -107,11 +139,12 @@ function csvEscape(value: unknown) {
 function downloadDailyCsv(summary: DailySummary | null) {
   if (!summary) return;
   const rows = [
-    ["Fecha", "Cliente/Tienda", "Codigo", "Producto", "Cantidad", "Precio unitario", "Total"],
+    ["Fecha", "Cliente/Tienda", "Catalogo", "Codigo", "Producto", "Cantidad", "Precio unitario", "Total"],
     ...summary.stores.flatMap((store) =>
       store.items.map((item) => [
         summary.date,
         store.customer,
+        catalogLabel(item.catalog),
         item.code,
         item.name,
         item.quantity,
@@ -131,11 +164,14 @@ function downloadDailyCsv(summary: DailySummary | null) {
 }
 
 function App() {
+  const initialDraft = useMemo(() => readDraft(), []);
   const [products, setProducts] = useState<Product[]>([]);
-  const [customerDraft, setCustomerDraft] = useState("");
-  const [customer, setCustomer] = useState("");
+  const [customerDraft, setCustomerDraft] = useState(initialDraft?.customerDraft || "");
+  const [customer, setCustomer] = useState(initialDraft?.customer || "");
   const [reportsOnly, setReportsOnly] = useState(false);
-  const [cart, setCart] = useState<Cart>({});
+  const [cart, setCart] = useState<Cart>(initialDraft?.cart || {});
+  const [activeCatalog, setActiveCatalog] = useState<CatalogId>(initialDraft?.activeCatalog || "agua");
+  const [reportCatalog, setReportCatalog] = useState<ReportCatalogFilter>("todos");
   const [query, setQuery] = useState("");
   const [brand, setBrand] = useState("Todas");
   const [category, setCategory] = useState("Todas");
@@ -177,30 +213,56 @@ function App() {
     loadDailySummary(today);
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem(
+      draftStorageKey,
+      JSON.stringify({ customerDraft, customer, cart, activeCatalog })
+    );
+  }, [activeCatalog, cart, customer, customerDraft]);
+
+  useEffect(() => {
+    setBrand("Todas");
+    setCategory("Todas");
+    setQuery("");
+  }, [activeCatalog]);
+
+  const catalogProducts = useMemo(
+    () => products.filter((product) => product.catalog === activeCatalog),
+    [activeCatalog, products]
+  );
+
+  const catalogCounts = useMemo(() => {
+    const counts: Record<CatalogId, number> = { agua: 0, aire: 0 };
+    for (const product of products) {
+      counts[product.catalog] += 1;
+    }
+    return counts;
+  }, [products]);
+
   const brands = useMemo(
-    () => ["Todas", ...Array.from(new Set(products.map((product) => product.brand).filter(Boolean))).sort()],
-    [products]
+    () => ["Todas", ...Array.from(new Set(catalogProducts.map((product) => product.brand).filter(Boolean))).sort()],
+    [catalogProducts]
   );
 
   const brandSummaries = useMemo<BrandSummary[]>(() => {
     const counts = new Map<string, number>();
-    for (const product of products) {
+    for (const product of catalogProducts) {
       const productBrand = product.brand || "Sin marca";
       counts.set(productBrand, (counts.get(productBrand) || 0) + 1);
     }
     return Array.from(counts.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [products]);
+  }, [catalogProducts]);
 
   const categories = useMemo(
-    () => ["Todas", ...Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort()],
-    [products]
+    () => ["Todas", ...Array.from(new Set(catalogProducts.map((product) => product.category).filter(Boolean))).sort()],
+    [catalogProducts]
   );
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return products.filter((product) => {
+    return catalogProducts.filter((product) => {
       const matchesQuery =
         !normalizedQuery ||
         product.name.toLowerCase().includes(normalizedQuery) ||
@@ -209,7 +271,7 @@ function App() {
       const matchesCategory = category === "Todas" || product.category === category;
       return matchesQuery && matchesBrand && matchesCategory;
     });
-  }, [brand, category, products, query]);
+  }, [brand, catalogProducts, category, query]);
 
   const selectedItems = useMemo(
     () =>
@@ -224,6 +286,11 @@ function App() {
 
   const totalUnits = selectedItems.reduce((sum, item) => sum + item.quantity, 0);
   const totalValue = selectedItems.reduce((sum, item) => sum + item.quantity * item.price, 0);
+  const selectedCatalogUnits = useMemo(() => {
+    const counts: Record<CatalogId, number> = { agua: 0, aire: 0 };
+    for (const item of selectedItems) counts[item.catalog] += item.quantity;
+    return counts;
+  }, [selectedItems]);
 
   function setQuantity(code: string, quantity: number) {
     setCart((current) => {
@@ -316,7 +383,8 @@ function App() {
         brand: newProductCategory,
         category: newProductCategory,
         image: "/productos/placeholder.svg",
-        price
+        price,
+        catalog: activeCatalog
       });
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo crear el producto.");
@@ -342,7 +410,8 @@ function App() {
           code: item.code,
           name: item.name,
           price: item.price,
-          quantity: item.quantity
+          quantity: item.quantity,
+          catalog: item.catalog
         }))
       );
     } catch (error) {
@@ -351,6 +420,7 @@ function App() {
     }
 
     setCart({});
+    window.localStorage.removeItem(draftStorageKey);
     setStatus("Pedido guardado correctamente.");
     await loadDailySummary();
   }
@@ -387,12 +457,24 @@ function App() {
   }
 
   function renderDailyReport() {
+    const visibleStores = (dailySummary?.stores || [])
+      .map((store) => {
+        const items = reportCatalog === "todos" ? store.items : store.items.filter((item) => item.catalog === reportCatalog);
+        return {
+          ...store,
+          items,
+          total: items.reduce((sum, item) => sum + item.total, 0)
+        };
+      })
+      .filter((store) => store.items.length > 0);
+    const visibleTotal = visibleStores.reduce((sum, store) => sum + store.total, 0);
+
     return (
       <div className="daily-report detailed-report">
         <div className="report-toolbar">
           <div>
             <h3>Informe por tienda</h3>
-            <span>{dailySummary?.storeCount || 0} tiendas - {formatCurrency(dailySummary?.grandTotal || 0)}</span>
+            <span>{visibleStores.length} tiendas - {formatCurrency(visibleTotal)}</span>
           </div>
           <input
             type="date"
@@ -402,6 +484,18 @@ function App() {
               await loadDailySummary(event.target.value);
             }}
           />
+        </div>
+
+        <div className="catalog-switch compact">
+          <button className={reportCatalog === "todos" ? "active" : ""} onClick={() => setReportCatalog("todos")}>
+            Todos
+          </button>
+          <button className={reportCatalog === "agua" ? "active" : ""} onClick={() => setReportCatalog("agua")}>
+            Agua
+          </button>
+          <button className={reportCatalog === "aire" ? "active" : ""} onClick={() => setReportCatalog("aire")}>
+            Aire
+          </button>
         </div>
 
         <div className="report-actions">
@@ -414,9 +508,9 @@ function App() {
           </button>
         </div>
 
-        {dailySummary && dailySummary.stores.length > 0 ? (
+        {dailySummary && visibleStores.length > 0 ? (
           <div className="store-report-list">
-            {dailySummary.stores.map((store) => (
+            {visibleStores.map((store) => (
               <section className="store-report" key={store.customer}>
                 <div className="store-report-heading">
                   <div>
@@ -427,10 +521,10 @@ function App() {
                 </div>
                 <div className="store-report-items">
                   {store.items.map((item) => (
-                    <div className="store-report-item" key={`${store.customer}-${item.code}-${item.unitPrice}`}>
+                    <div className="store-report-item" key={`${store.customer}-${item.catalog}-${item.code}-${item.unitPrice}`}>
                       <div>
                         <strong>{item.name}</strong>
-                        <span>{item.code}</span>
+                        <span>{catalogLabel(item.catalog)} - {item.code}</span>
                       </div>
                       <span>{item.quantity}</span>
                       <span>{formatCurrency(item.unitPrice)}</span>
@@ -565,6 +659,23 @@ function App() {
 
       <section className="workspace">
         <section className="catalog-area">
+          <section className="catalog-switch-panel">
+            <span className="eyebrow">Catalogo activo</span>
+            <div className="catalog-switch">
+              {catalogOptions.map((option) => (
+                <button
+                  className={activeCatalog === option.id ? "active" : ""}
+                  key={option.id}
+                  onClick={() => setActiveCatalog(option.id)}
+                >
+                  <strong>{option.label}</strong>
+                  <span>{catalogCounts[option.id]} productos</span>
+                  {selectedCatalogUnits[option.id] > 0 && <b>{selectedCatalogUnits[option.id]}</b>}
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section className="brand-filter-panel">
             <div className="brand-filter-heading">
               <div>
@@ -573,7 +684,7 @@ function App() {
               </div>
               <button className={brand === "Todas" ? "brand-pill active" : "brand-pill"} onClick={() => setBrand("Todas")}>
                 Todas
-                <span>{products.length}</span>
+                <span>{catalogProducts.length}</span>
               </button>
             </div>
             <div className="brand-strip">
@@ -682,7 +793,7 @@ function App() {
                 <div className="cart-row" key={item.code}>
                   <div>
                     <strong>{item.name}</strong>
-                    <span>{item.code} - {formatCurrency(item.price)}</span>
+                    <span>{catalogLabel(item.catalog)} - {item.code} - {formatCurrency(item.price)}</span>
                   </div>
                   <input
                     type="number"

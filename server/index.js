@@ -26,6 +26,7 @@ db.exec(`
     category TEXT NOT NULL DEFAULT '',
     image TEXT NOT NULL DEFAULT '',
     price INTEGER NOT NULL DEFAULT 0,
+    catalog TEXT NOT NULL DEFAULT 'aire',
     sort_order INTEGER NOT NULL DEFAULT 999999
   );
 
@@ -40,6 +41,7 @@ db.exec(`
     order_id INTEGER NOT NULL,
     product_code TEXT NOT NULL,
     product_name TEXT NOT NULL,
+    product_catalog TEXT NOT NULL DEFAULT 'aire',
     unit_price INTEGER NOT NULL DEFAULT 0,
     quantity INTEGER NOT NULL,
     FOREIGN KEY(order_id) REFERENCES orders(id)
@@ -53,17 +55,23 @@ if (!productColumns.includes("sort_order")) {
 if (!productColumns.includes("price")) {
   db.exec("ALTER TABLE products ADD COLUMN price INTEGER NOT NULL DEFAULT 0");
 }
+if (!productColumns.includes("catalog")) {
+  db.exec("ALTER TABLE products ADD COLUMN catalog TEXT NOT NULL DEFAULT 'aire'");
+}
 
 const orderItemColumns = db.prepare("PRAGMA table_info(order_items)").all().map((column) => column.name);
 if (!orderItemColumns.includes("unit_price")) {
   db.exec("ALTER TABLE order_items ADD COLUMN unit_price INTEGER NOT NULL DEFAULT 0");
 }
+if (!orderItemColumns.includes("product_catalog")) {
+  db.exec("ALTER TABLE order_items ADD COLUMN product_catalog TEXT NOT NULL DEFAULT 'aire'");
+}
 
 const countProducts = db.prepare("SELECT COUNT(*) AS total FROM products").get().total;
 if (countProducts === 0) {
   const seed = db.prepare(`
-    INSERT INTO products (code, name, brand, category, image, price)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO products (code, name, brand, category, image, price, catalog)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   const seedProducts = [
     {
@@ -72,13 +80,14 @@ if (countProducts === 0) {
       brand: "Red de Marcas",
       category: "Catalogo",
       image: "/productos/placeholder.svg",
-      price: 0
+      price: 0,
+      catalog: "aire"
     }
   ];
   db.exec("BEGIN");
   try {
     for (const item of seedProducts) {
-      seed.run(item.code, item.name, item.brand, item.category, item.image, item.price);
+      seed.run(item.code, item.name, item.brand, item.category, item.image, item.price, item.catalog);
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -130,7 +139,8 @@ function normalizeProduct(product) {
     brand: String(product.brand ?? "").trim(),
     category: String(product.category ?? "").trim(),
     image: String(product.image ?? "").trim(),
-    price: Number(product.price ?? product.precio ?? 0) || 0
+    price: Number(product.price ?? product.precio ?? 0) || 0,
+    catalog: String(product.catalog ?? product.catalogo ?? "").trim().toLowerCase() === "agua" ? "agua" : "aire"
   };
 }
 
@@ -144,13 +154,14 @@ function csvEscape(value) {
 }
 
 function sendCsv(res, rows, date) {
-  const header = ["Fecha", "Cliente/Tienda", "Codigo", "Producto", "Cantidad", "Precio unitario", "Total"];
+  const header = ["Fecha", "Cliente/Tienda", "Catalogo", "Codigo", "Producto", "Cantidad", "Precio unitario", "Total"];
   const lines = [
     header.map(csvEscape).join(","),
     ...rows.map((row) =>
       [
         row.created_at,
         row.customer,
+        row.product_catalog === "agua" ? "Agua" : "Aire",
         row.product_code,
         row.product_name,
         row.quantity,
@@ -174,13 +185,14 @@ function buildDailySummary(date) {
         o.customer,
         i.product_code,
         i.product_name,
+        i.product_catalog,
         i.unit_price,
         SUM(i.quantity) AS quantity,
         SUM(i.quantity * i.unit_price) AS total
       FROM orders o
       JOIN order_items i ON i.order_id = o.id
       WHERE substr(o.created_at, 1, 10) = ?
-      GROUP BY o.customer, i.product_code, i.product_name, i.unit_price
+      GROUP BY o.customer, i.product_code, i.product_name, i.product_catalog, i.unit_price
       ORDER BY o.customer, i.product_name, i.product_code
     `)
     .all(date);
@@ -210,10 +222,11 @@ function buildDailySummary(date) {
     const store = storesByName.get(row.customer);
     const total = Number(row.total || 0);
     store.total += total;
-    store.items.push({
-      code: row.product_code,
-      name: row.product_name,
-      quantity: Number(row.quantity || 0),
+      store.items.push({
+        code: row.product_code,
+        name: row.product_name,
+        catalog: row.product_catalog === "agua" ? "agua" : "aire",
+        quantity: Number(row.quantity || 0),
       unitPrice: Number(row.unit_price || 0),
       total
     });
@@ -231,7 +244,7 @@ function buildDailySummary(date) {
 async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/products") {
     const products = db
-      .prepare("SELECT code, name, brand, category, image, price FROM products ORDER BY brand, sort_order, name, code")
+      .prepare("SELECT code, name, brand, category, image, price, catalog FROM products ORDER BY catalog, brand, sort_order, name, code")
       .all();
     json(res, 200, products);
     return;
@@ -248,20 +261,21 @@ async function handleApi(req, res, url) {
     }
 
     const upsert = db.prepare(`
-      INSERT INTO products (code, name, brand, category, image, price, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, 999999)
+      INSERT INTO products (code, name, brand, category, image, price, catalog, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 999999)
       ON CONFLICT(code) DO UPDATE SET
         name = excluded.name,
         brand = excluded.brand,
         category = excluded.category,
         image = excluded.image,
         price = excluded.price,
+        catalog = excluded.catalog,
         sort_order = excluded.sort_order
     `);
 
     runTransaction(() => {
       for (const product of valid) {
-        upsert.run(product.code, product.name, product.brand, product.category, product.image || "/productos/placeholder.svg", product.price);
+        upsert.run(product.code, product.name, product.brand, product.category, product.image || "/productos/placeholder.svg", product.price, product.catalog);
       }
     });
 
@@ -290,19 +304,20 @@ async function handleApi(req, res, url) {
     }
 
     db.prepare(`
-      INSERT INTO products (code, name, brand, category, image, price, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, 999999)
+      INSERT INTO products (code, name, brand, category, image, price, catalog, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 999999)
     `).run(
       product.code,
       product.name,
       product.brand || product.category || "Novedades",
       product.category || product.brand || "Novedades",
       product.image || "/productos/placeholder.svg",
-      product.price
+      product.price,
+      product.catalog
     );
 
     const created = db
-      .prepare("SELECT code, name, brand, category, image, price FROM products WHERE code = ?")
+      .prepare("SELECT code, name, brand, category, image, price, catalog FROM products WHERE code = ?")
       .get(product.code);
     json(res, 201, created);
     return;
@@ -338,7 +353,7 @@ async function handleApi(req, res, url) {
 
     db.prepare("UPDATE products SET code = ?, price = ? WHERE code = ?").run(nextCode, nextPrice, currentCode);
     const updated = db
-      .prepare("SELECT code, name, brand, category, image, price FROM products WHERE code = ?")
+      .prepare("SELECT code, name, brand, category, image, price, catalog FROM products WHERE code = ?")
       .get(nextCode);
     json(res, 200, updated);
     return;
@@ -379,6 +394,7 @@ async function handleApi(req, res, url) {
         code: String(item.code ?? "").trim(),
         name: String(item.name ?? "").trim(),
         price: Number(item.price ?? 0) || 0,
+        catalog: String(item.catalog ?? "").trim().toLowerCase() === "agua" ? "agua" : "aire",
         quantity: Number(item.quantity)
       }))
       .filter((item) => item.code && item.name && Number.isInteger(item.quantity) && item.quantity > 0);
@@ -392,13 +408,14 @@ async function handleApi(req, res, url) {
     const orderId = runTransaction(() => {
       const order = db.prepare("INSERT INTO orders (customer, created_at) VALUES (?, ?)").run(customer, createdAt);
       const itemStmt = db.prepare(`
-        INSERT INTO order_items (order_id, product_code, product_name, unit_price, quantity)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO order_items (order_id, product_code, product_name, product_catalog, unit_price, quantity)
+        VALUES (?, ?, ?, ?, ?, ?)
       `);
       for (const item of validItems) {
-        const product = db.prepare("SELECT price FROM products WHERE code = ?").get(item.code);
+        const product = db.prepare("SELECT price, catalog FROM products WHERE code = ?").get(item.code);
         const unitPrice = Number(product?.price ?? item.price ?? 0) || 0;
-        itemStmt.run(order.lastInsertRowid, item.code, item.name, unitPrice, item.quantity);
+        const catalog = product?.catalog === "agua" ? "agua" : item.catalog;
+        itemStmt.run(order.lastInsertRowid, item.code, item.name, catalog, unitPrice, item.quantity);
       }
       return order.lastInsertRowid;
     });
@@ -411,7 +428,7 @@ async function handleApi(req, res, url) {
     const date = url.searchParams.get("date") || todayISO();
     const rows = db
       .prepare(`
-        SELECT o.id, o.customer, o.created_at, i.product_code, i.product_name, i.unit_price, i.quantity
+        SELECT o.id, o.customer, o.created_at, i.product_code, i.product_name, i.product_catalog, i.unit_price, i.quantity
         FROM orders o
         JOIN order_items i ON i.order_id = o.id
         WHERE substr(o.created_at, 1, 10) = ?
@@ -464,7 +481,7 @@ async function handleApi(req, res, url) {
     const date = url.searchParams.get("date") || todayISO();
     const rows = db
       .prepare(`
-        SELECT o.customer, o.created_at, i.product_code, i.product_name, i.unit_price, i.quantity
+        SELECT o.customer, o.created_at, i.product_code, i.product_name, i.product_catalog, i.unit_price, i.quantity
         FROM orders o
         JOIN order_items i ON i.order_id = o.id
         WHERE substr(o.created_at, 1, 10) = ?

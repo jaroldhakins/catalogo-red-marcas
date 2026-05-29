@@ -17,7 +17,7 @@ def sql(value):
 connection = sqlite3.connect(DB)
 rows = connection.execute(
     """
-    SELECT code, name, brand, category, image, price, sort_order
+    SELECT code, name, brand, category, image, price, catalog, sort_order
     FROM products
     ORDER BY sort_order, brand, name
     """
@@ -26,7 +26,7 @@ connection.close()
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
 with OUT.open("w", encoding="utf-8") as file:
-    file.write("insert into public.products (code, name, brand, category, image, price, sort_order) values\n")
+    file.write("insert into public.products (code, name, brand, category, image, price, catalog, sort_order) values\n")
     values = []
     for row in rows:
         values.append("(" + ", ".join(sql(value) for value in row) + ")")
@@ -38,6 +38,7 @@ with OUT.open("w", encoding="utf-8") as file:
         "  category = excluded.category,\n"
         "  image = excluded.image,\n"
         "  price = excluded.price,\n"
+        "  catalog = excluded.catalog,\n"
         "  sort_order = excluded.sort_order,\n"
         "  updated_at = now();\n"
     )

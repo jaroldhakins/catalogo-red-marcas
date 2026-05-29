@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { catalogForProductCode } from "./catalogs";
 
 export type Product = {
   code: string;
@@ -7,6 +8,7 @@ export type Product = {
   category: string;
   image: string;
   price: number;
+  catalog: CatalogId;
 };
 
 export type OrderItemInput = {
@@ -14,11 +16,13 @@ export type OrderItemInput = {
   name: string;
   price: number;
   quantity: number;
+  catalog: CatalogId;
 };
 
 export type StoreReportItem = {
   code: string;
   name: string;
+  catalog: CatalogId;
   quantity: number;
   unitPrice: number;
   total: number;
@@ -38,9 +42,15 @@ export type DailySummary = {
   stores: StoreReport[];
 };
 
+export type CatalogId = "agua" | "aire";
+
 const fallbackSupabaseUrl = "https://swnmnwggvbvqthdnfjka.supabase.co";
 const fallbackSupabaseKey = "sb_publishable_hwsIHmt3qAxeduoDQ-x5yA_UNQI2xjg";
 const deletedCategory = "Eliminados";
+
+function normalizeCatalog(code: string, value?: unknown): CatalogId {
+  return catalogForProductCode(code, value);
+}
 
 function cleanEnvValue(value: string | undefined, fallback: string) {
   const cleaned = String(value || "")
@@ -68,6 +78,10 @@ function bogotaRange(date: string) {
   };
 }
 
+function isMissingColumnError(error: unknown) {
+  return String((error as { message?: string })?.message || error).toLowerCase().includes("column");
+}
+
 function mapProduct(row: Record<string, unknown>): Product {
   return {
     code: String(row.code ?? ""),
@@ -75,7 +89,8 @@ function mapProduct(row: Record<string, unknown>): Product {
     brand: String(row.brand ?? ""),
     category: String(row.category ?? ""),
     image: String(row.image ?? ""),
-    price: Number(row.price ?? 0)
+    price: Number(row.price ?? 0),
+    catalog: normalizeCatalog(String(row.code ?? ""), row.catalog)
   };
 }
 
@@ -91,10 +106,22 @@ export async function getProducts(): Promise<Product[]> {
 
   const { data, error } = await supabase
     .from("products")
-    .select("code,name,brand,category,image,price,sort_order")
+    .select("code,name,brand,category,image,price,catalog,sort_order")
+    .order("catalog", { ascending: true })
     .order("brand", { ascending: true })
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await supabase
+      .from("products")
+      .select("code,name,brand,category,image,price,sort_order")
+      .order("brand", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    if (fallback.error) throw fallback.error;
+    return (fallback.data || []).map(mapProduct).filter((product) => product.category !== deletedCategory);
+  }
 
   if (error) throw error;
   return (data || []).map(mapProduct).filter((product) => product.category !== deletedCategory);
@@ -112,15 +139,24 @@ export async function updateProduct(currentCode: string, product: Pick<Product, 
     return result;
   }
 
-  const { data, error } = await supabase
+  let result = await supabase
     .from("products")
     .update({ code: product.code, price: product.price })
     .eq("code", currentCode)
-    .select("code,name,brand,category,image,price")
+    .select("code,name,brand,category,image,price,catalog")
     .single();
 
-  if (error) throw error;
-  return mapProduct(data);
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabase
+      .from("products")
+      .update({ code: product.code, price: product.price })
+      .eq("code", currentCode)
+      .select("code,name,brand,category,image,price")
+      .single();
+  }
+
+  if (result.error) throw result.error;
+  return mapProduct(result.data);
 }
 
 export async function createProduct(product: Product): Promise<Product> {
@@ -135,7 +171,7 @@ export async function createProduct(product: Product): Promise<Product> {
     return result;
   }
 
-  const { data, error } = await supabase
+  let result = await supabase
     .from("products")
     .insert({
       code: product.code,
@@ -144,13 +180,30 @@ export async function createProduct(product: Product): Promise<Product> {
       category: product.category,
       image: product.image || "/productos/placeholder.svg",
       price: product.price,
+      catalog: product.catalog,
       sort_order: 999999
     })
-    .select("code,name,brand,category,image,price")
+    .select("code,name,brand,category,image,price,catalog")
     .single();
 
-  if (error) throw error;
-  return mapProduct(data);
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabase
+      .from("products")
+      .insert({
+        code: product.code,
+        name: product.name,
+        brand: product.brand,
+        category: product.category,
+        image: product.image || "/productos/placeholder.svg",
+        price: product.price,
+        sort_order: 999999
+      })
+      .select("code,name,brand,category,image,price")
+      .single();
+  }
+
+  if (result.error) throw result.error;
+  return { ...mapProduct(result.data), catalog: product.catalog };
 }
 
 export async function deleteProduct(code: string, pin: string) {
@@ -168,7 +221,7 @@ export async function deleteProduct(code: string, pin: string) {
   }
 
   const deletedCode = `ELIMINADO-${Date.now()}-${code}`;
-  const { error, count } = await supabase
+  let result = await supabase
     .from("products")
     .update({
       code: deletedCode,
@@ -177,12 +230,28 @@ export async function deleteProduct(code: string, pin: string) {
       category: deletedCategory,
       image: "/productos/placeholder.svg",
       price: 0,
+      catalog: "aire",
       sort_order: 999999
     }, { count: "exact" })
     .eq("code", code);
 
-  if (error) throw error;
-  return { deletedProducts: count || 0 };
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabase
+      .from("products")
+      .update({
+        code: deletedCode,
+        name: `Producto eliminado ${code}`,
+        brand: deletedCategory,
+        category: deletedCategory,
+        image: "/productos/placeholder.svg",
+        price: 0,
+        sort_order: 999999
+      }, { count: "exact" })
+      .eq("code", code);
+  }
+
+  if (result.error) throw result.error;
+  return { deletedProducts: result.count || 0 };
 }
 
 export async function importProducts(products: Product[]) {
@@ -197,20 +266,30 @@ export async function importProducts(products: Product[]) {
     return result.imported as number;
   }
 
-  const { error } = await supabase.from("products").upsert(
-    products.map((product) => ({
+  const payload = products.map((product) => ({
       code: product.code,
       name: product.name,
       brand: product.brand,
       category: product.category,
       image: product.image,
       price: product.price,
+      catalog: product.catalog,
       sort_order: 999999
-    })),
+  }));
+
+  let result = await supabase.from("products").upsert(
+    payload,
     { onConflict: "code" }
   );
 
-  if (error) throw error;
+  if (result.error && isMissingColumnError(result.error)) {
+    result = await supabase.from("products").upsert(
+      payload.map(({ catalog, ...product }) => product),
+      { onConflict: "code" }
+    );
+  }
+
+  if (result.error) throw result.error;
   return products.length;
 }
 
@@ -234,17 +313,23 @@ export async function saveOrder(customer: string, items: OrderItemInput[]) {
 
   if (orderError) throw orderError;
 
-  const { error: itemError } = await supabase.from("order_items").insert(
-    items.map((item) => ({
+  const itemPayload = items.map((item) => ({
       order_id: order.id,
       product_code: item.code,
       product_name: item.name,
+      product_catalog: item.catalog,
       unit_price: item.price,
       quantity: item.quantity
-    }))
-  );
+  }));
 
-  if (itemError) throw itemError;
+  let itemResult = await supabase.from("order_items").insert(itemPayload);
+  if (itemResult.error && isMissingColumnError(itemResult.error)) {
+    itemResult = await supabase.from("order_items").insert(
+      itemPayload.map(({ product_catalog, ...item }) => item)
+    );
+  }
+
+  if (itemResult.error) throw itemResult.error;
   return order;
 }
 
@@ -255,17 +340,29 @@ export async function getDailySummary(date: string): Promise<DailySummary> {
   }
 
   const range = bogotaRange(date);
-  const { data: orders, error } = await supabase
+  let orderResult: {
+    data: Array<Record<string, unknown>> | null;
+    error: unknown;
+  } = await supabase
     .from("orders")
-    .select("id,customer,created_at,order_items(product_code,product_name,unit_price,quantity)")
+    .select("id,customer,created_at,order_items(product_code,product_name,product_catalog,unit_price,quantity)")
     .gte("created_at", range.start)
     .lt("created_at", range.end)
     .order("customer", { ascending: true });
 
-  if (error) throw error;
+  if (orderResult.error && isMissingColumnError(orderResult.error)) {
+    orderResult = await supabase
+      .from("orders")
+      .select("id,customer,created_at,order_items(product_code,product_name,unit_price,quantity)")
+      .gte("created_at", range.start)
+      .lt("created_at", range.end)
+      .order("customer", { ascending: true });
+  }
+
+  if (orderResult.error) throw orderResult.error;
 
   const storesByName = new Map<string, StoreReport>();
-  for (const order of orders || []) {
+  for (const order of orderResult.data || []) {
     const customer = String(order.customer);
     if (!storesByName.has(customer)) {
       storesByName.set(customer, { customer, orderCount: 0, total: 0, items: [] });
@@ -276,10 +373,11 @@ export async function getDailySummary(date: string): Promise<DailySummary> {
     const items = Array.isArray(order.order_items) ? order.order_items : [];
     for (const item of items) {
       const code = String(item.product_code);
+      const catalog = normalizeCatalog(code, item.product_catalog);
       const unitPrice = Number(item.unit_price || 0);
       const quantity = Number(item.quantity || 0);
       const total = unitPrice * quantity;
-      const existing = store.items.find((row) => row.code === code && row.unitPrice === unitPrice);
+      const existing = store.items.find((row) => row.code === code && row.unitPrice === unitPrice && row.catalog === catalog);
       if (existing) {
         existing.quantity += quantity;
         existing.total += total;
@@ -287,6 +385,7 @@ export async function getDailySummary(date: string): Promise<DailySummary> {
         store.items.push({
           code,
           name: String(item.product_name),
+          catalog,
           unitPrice,
           quantity,
           total

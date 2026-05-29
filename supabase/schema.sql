@@ -7,6 +7,7 @@ create table if not exists public.products (
   category text not null default '',
   image text not null default '',
   price integer not null default 0 check (price >= 0),
+  catalog text not null default 'aire' check (catalog in ('agua', 'aire')),
   sort_order integer not null default 999999,
   updated_at timestamptz not null default now()
 );
@@ -22,9 +23,16 @@ create table if not exists public.order_items (
   order_id uuid not null references public.orders(id) on delete cascade,
   product_code text not null,
   product_name text not null,
+  product_catalog text not null default 'aire' check (product_catalog in ('agua', 'aire')),
   unit_price integer not null default 0 check (unit_price >= 0),
   quantity integer not null check (quantity > 0)
 );
+
+alter table public.products
+  add column if not exists catalog text not null default 'aire' check (catalog in ('agua', 'aire'));
+
+alter table public.order_items
+  add column if not exists product_catalog text not null default 'aire' check (product_catalog in ('agua', 'aire'));
 
 create index if not exists orders_created_at_idx on public.orders(created_at);
 create index if not exists orders_customer_idx on public.orders(customer);
